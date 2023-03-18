@@ -1,7 +1,10 @@
 # CameraShake
 
-CameraShake is a behavior class for BabylonJS that adds camera shake effect with
-various parameters.
+CameraShake is a behavior class for BabylonJS that adds camera shake effect with various parameters.
+
+In this example you can see the camera shake effect when the camera is close to the red cube.
+
+https://user-images.githubusercontent.com/2697890/226104576-baeed72e-7f05-4f1c-9c19-60b52358b1c3.mp4
 
 ## Installation
 
@@ -19,11 +22,9 @@ Here's an example of how to use CameraShake:
 import { SceneLoader } from '@babylonjs/core';
 import { CameraShake, CameraShakeOptions } from 'camera-shake';
 
-
 SceneLoader.Append('/assets/', 'myScene.gltf', this.scene, scene => {
   // Find a camera
   const myCam = scene.getCameraByName('myCam');
-
 
   if (myCam) {
     // Attach behavior to camera
