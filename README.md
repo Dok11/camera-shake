@@ -75,6 +75,44 @@ if (shakeAttractor) {
 }
 ```
 
+And you can make a walking camera shake effect with the following code:
+
+```ts
+// Walking camera settings, but with zero influence by default
+const cameraShakeOptions: CameraShakeOptions = {
+  shakePattern: 'sin',
+  amplitude: new Vector3(0.1, 0.1, 0),
+  frequency: new Vector3(3, 9, 0),
+  rotation: new Vector3(0.01, 0, 0),
+  rotationFrequency: new Vector3(9, 1, 0),
+  influence: 0,
+};
+const cameraShake = new CameraShake(cameraShakeOptions);
+camera.addBehavior(cameraShake);
+
+// Initialize variables to track camera movement
+let previousPosition = camera.position.clone();
+let previousTime = performance.now();
+
+this.scene.onBeforeRenderObservable.add(function() {
+  // Calculate time difference and distance moved since last frame
+  const currentTime = performance.now();
+  const timeDiff = currentTime - previousTime;
+  const distanceMoved = Vector3.Distance(camera.position, previousPosition);
+
+  // Calculate speed in units per second
+  const speed = distanceMoved / (timeDiff / 1000);
+
+  // Set cameraShakeOptions.influence relative to camera speed
+  const cameraSpeedMax = 4;
+  cameraShakeOptions.influence = Math.min(speed / cameraSpeedMax, 1);
+
+  // Update the previous position and time
+  previousPosition.copyFrom(camera.position);
+  previousTime = currentTime;
+});
+```
+
 ## Options
 
 - `shakePattern` - `'perlin'` or `'sin'`. Default is `'perlin'`.
@@ -85,6 +123,7 @@ if (shakeAttractor) {
 - `rotationFrequency` - Rotation frequency of the shake, number or Vector3. Default is `0`.
 - `rotationFrequencyOffset` - Rotation frequency offset of the shake, number or Vector3. Default is `Math.random()`.
 - `speed` - Speed of the shake. Default is `1`.
+- `influence` - Influence of the shake. Default is `1`.
 - `onBeforeUpdate` - Callback function that is called before updating the shake. Default is `null`.
 
 ## Contributing

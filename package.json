@@ -1,6 +1,6 @@
 {
   "name": "camera-shake",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Behavior class for BabylonJS that adds camera shake effect with various parameters",
   "keywords": [
     "babylonjs",

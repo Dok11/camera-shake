@@ -1,6 +1,6 @@
 import { TransformNode } from '@babylonjs/core';
 import { Behavior } from '@babylonjs/core/Behaviors/behavior';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { Observer } from '@babylonjs/core/Misc/observable';
 import { Scene } from '@babylonjs/core/scene';
 import { Nullable } from '@babylonjs/core/types';
@@ -18,6 +18,7 @@ export interface CameraShakeOptions {
   rotationOffset?: number;
 
   speed?: number;
+  influence?: number;
 
   onBeforeUpdate?:
     (targetValues: Pick<CameraShakeOptions, 'amplitude' | 'frequency' | 'rotation' | 'rotationFrequency'>)
@@ -25,7 +26,7 @@ export interface CameraShakeOptions {
 }
 
 
-const defaultCameraShakeOptions: CameraShakeOptions = {
+const defaultCameraShakeOptions: Required<Omit<CameraShakeOptions, 'onBeforeUpdate'>> = {
   shakePattern: 'perlin',
 
   amplitude: 0,
@@ -37,6 +38,7 @@ const defaultCameraShakeOptions: CameraShakeOptions = {
   rotationOffset: Math.random(),
 
   speed: 1,
+  influence: 1,
 };
 
 
@@ -52,7 +54,17 @@ export class CameraShake implements Behavior<TransformNode> {
 
 
   constructor(options: CameraShakeOptions = defaultCameraShakeOptions) {
-    this.options = { ...defaultCameraShakeOptions, ...options };
+    this.options = options;
+
+    // pass all default values from defaultCameraShakeOptions if they are not set in options
+    for (const key in defaultCameraShakeOptions) {
+      const optionsKey = key as keyof CameraShakeOptions;
+
+      if (this.options[optionsKey] === undefined) {
+        // @ts-ignore
+        this.options[optionsKey] = defaultCameraShakeOptions[optionsKey];
+      }
+    }
   }
 
 
@@ -92,25 +104,7 @@ export class CameraShake implements Behavior<TransformNode> {
   private shake(): void {
     if (!this.target || !this.parent) { return; }
 
-    const amplitude = this.getValueAsVector(this.options.amplitude);
-    const frequency = this.getValueAsVector(this.options.frequency);
-    const rotationFrequency = this.getValueAsVector(this.options.rotationFrequency);
-    const rotation = this.getValueAsVector(this.options.rotation);
-
-    const frequencyOffset = this.options.frequencyOffset || defaultCameraShakeOptions.frequencyOffset || 0;
-    const rotationOffset = this.options.rotationOffset || defaultCameraShakeOptions.rotationOffset || 0;
-
-    const speed = this.options.speed || defaultCameraShakeOptions.speed || 1;
-
-    const currentValues = { amplitude, frequency, rotation };
-    if (this.options.onBeforeUpdate) {
-      const updatedValues = this.options.onBeforeUpdate(currentValues);
-
-      amplitude.copyFrom(this.getValueAsVector(updatedValues.amplitude));
-      frequency.copyFrom(this.getValueAsVector(updatedValues.frequency));
-      rotationFrequency.copyFrom(this.getValueAsVector(updatedValues.rotationFrequency));
-      rotation.copyFrom(this.getValueAsVector(updatedValues.rotation));
-    }
+    const speed = this.options.speed ?? defaultCameraShakeOptions.speed ?? 1;
 
     const shakePatternFunc = this.options.shakePattern === 'perlin'
       ? this.perlin.noise1D.bind(this.perlin)
@@ -118,19 +112,62 @@ export class CameraShake implements Behavior<TransformNode> {
 
     const time = Date.now() / 1000 * speed;
 
-    const offsetX = amplitude.x * (shakePatternFunc((frequency.x + frequencyOffset) * time) * 0.5 + 0.5);
-    const offsetY = amplitude.y * (shakePatternFunc((frequency.y + frequencyOffset) * time) * 0.5 + 0.5);
-    const offsetZ = amplitude.z * (shakePatternFunc((frequency.z + frequencyOffset) * time) * 0.5 + 0.5);
-    const offset = new Vector3(offsetX, offsetY, offsetZ)
-      .subtractInPlace(new Vector3(amplitude.x * 0.5, amplitude.y * 0.5, amplitude.z * 0.5));
+    this.shakePosition(time, shakePatternFunc);
+    this.shakeRotation(time, shakePatternFunc);
+  }
 
-    const rotX = rotation.x * shakePatternFunc((frequency.x + rotationFrequency.x + rotationOffset) * time);
-    const rotY = rotation.y * shakePatternFunc((frequency.y + rotationFrequency.y + rotationOffset) * time);
-    const rotZ = rotation.z * shakePatternFunc((frequency.z + rotationFrequency.z + rotationOffset) * time);
-    const rot = new Vector3(rotX, rotY, rotZ);
+  private shakePosition(time: number, shakePatternFunc: (x: number) => number): void {
+    if (!this.target || !this.parent) { return; }
 
+    const amplitude = this.getValueAsVector(this.options.amplitude);
+    if (amplitude.length() === 0) { return; } // No need to calculate if amplitude is zero
+
+    const frequency = this.getValueAsVector(this.options.frequency);
+    const frequencyOffset = this.options.frequencyOffset || defaultCameraShakeOptions.frequencyOffset || 0;
+    const influence = this.options.influence ?? defaultCameraShakeOptions.influence ?? 1;
+
+    const x = amplitude.x * (shakePatternFunc((frequency.x + frequencyOffset) * time) * 0.5 + 0.5) * influence;
+    const y = amplitude.y * (shakePatternFunc((frequency.y + frequencyOffset) * time) * 0.5 + 0.5) * influence;
+    const z = amplitude.z * (shakePatternFunc((frequency.z + frequencyOffset) * time) * 0.5 + 0.5) * influence;
+
+    const left = this.target.getDirection(Vector3.Left());
+    const up = this.target.getDirection(Vector3.Up());
+    const forward = this.target.getDirection(Vector3.Forward());
+
+    const offsetX = left.scale(x - amplitude.x * 0.5);
+    const offsetY = up.scale(y - amplitude.y * 0.5);
+    const offsetZ = forward.scale(z - amplitude.z * 0.5);
+
+    const offset = offsetX.add(offsetY).add(offsetZ);
     this.parent.position = this.target.position.clone().add(offset);
-    this.parent.rotation = rot;
+  }
+
+  private shakeRotation(time: number, shakePatternFunc: (x: number) => number): void {
+    if (!this.target || !this.parent) { return; }
+
+    const rotation = this.getValueAsVector(this.options.rotation);
+    if (rotation.length() === 0) { return; } // No need to calculate if rotation is zero
+
+    const frequency = this.getValueAsVector(this.options.frequency);
+    const rotationFrequency = this.getValueAsVector(this.options.rotationFrequency);
+    const rotationOffset = this.options.rotationOffset || defaultCameraShakeOptions.rotationOffset || 0;
+    const influence = this.options.influence ?? defaultCameraShakeOptions.influence ?? 1;
+
+    const x = rotation.x * shakePatternFunc((frequency.x + rotationFrequency.x + rotationOffset) * time) * influence;
+    const y = rotation.y * shakePatternFunc((frequency.y + rotationFrequency.y + rotationOffset) * time) * influence;
+    const z = rotation.z * shakePatternFunc((frequency.z + rotationFrequency.z + rotationOffset) * time) * influence;
+
+    const left = this.target.getDirection(Vector3.Left());
+    const up = this.target.getDirection(Vector3.Up());
+    const forward = this.target.getDirection(Vector3.Forward());
+
+    const quaternionX = Quaternion.RotationAxis(left, x);
+    const quaternionY = Quaternion.RotationAxis(up, y);
+    const quaternionZ = Quaternion.RotationAxis(forward, z);
+
+    const finalQuaternion = quaternionX.multiply(quaternionY).multiply(quaternionZ);
+
+    this.parent.rotation = finalQuaternion.toEulerAngles();
   }
 
 
